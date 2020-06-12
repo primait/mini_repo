@@ -4,10 +4,26 @@ config :mini_repo,
   port: 4000,
   url: "http://localhost:4000"
 
-store = {MiniRepo.Store.Local, root: {:mini_repo, "data"}}
+#store = {MiniRepo.Store.Local, root: "/code/data"}
+
+config :ex_aws,
+  access_key_id: [{:awscli, "default", 30}, {:system, "AWS_ACCESS_KEY_ID"},],
+  secret_access_key: [{:awscli, "default", 30},{:system, "AWS_SECRET_ACCESS_KEY"}],
+  region: "eu-west-1",
+  json_codec: Jason
+
+store =
+  {MiniRepo.Store.S3,
+    bucket: "prima-mini-repo",
+    options: [region: "eu-west-1"]
+  }
 
 config :mini_repo,
   auth_token: "secret",
+  store: [
+    bucket: "prima-mini-repo",
+    options: [region: "eu-west-1"]
+  ],
   repositories: [
     test_repo: [
       private_key: File.read!(Path.expand("../priv/test_repo_private.pem", __DIR__)),
@@ -19,13 +35,11 @@ config :mini_repo,
       upstream_name: "hexpm",
       upstream_url: "https://repo.hex.pm",
 
-      # only mirror following packages
       on_demand: true,
-      # only: ~w[decimal],
-      
+
       # 5min
       sync_interval: 5 * 60 * 1000,
-      sync_opts: [max_concurrency: 1],
+      sync_opts: [max_concurrency: 5, timeout: String.to_integer(System.get_env("MIRROR_TIMEOUT", "30000"))],
 
       # https://hex.pm/docs/public_keys
       upstream_public_key: """

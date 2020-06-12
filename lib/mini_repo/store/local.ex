@@ -21,16 +21,16 @@ defmodule MiniRepo.Store.Local do
   defstruct [:root]
 
   @impl true
-  def put(path, value, _options, state) do
-    path = path(path, state)
+  def put(path, value) do
+    path = path(path)
     Logger.debug(inspect({__MODULE__, :put, path}))
     File.mkdir_p!(Path.dirname(path))
     File.write(path, value)
   end
 
   @impl true
-  def fetch(path, _options, state) do
-    path = path(path, state)
+  def fetch(path) do
+    path = path(path)
     Logger.debug(inspect({__MODULE__, :fetch, path}))
 
     case File.read(path) do
@@ -46,8 +46,15 @@ defmodule MiniRepo.Store.Local do
   end
 
   @impl true
-  def delete(path, _options, state) do
-    path = path(path, state)
+  def exists?(path) do
+    path = path(path)
+    Logger.debug(inspect({__MODULE__, :exists, path}))
+    File.exists?(path)
+  end
+
+  @impl true
+  def delete(path) do
+    path = path(path)
 
     case File.rm(path) do
       :ok ->
@@ -61,9 +68,9 @@ defmodule MiniRepo.Store.Local do
     end
   end
 
-  defp path(path, state) do
+  defp path(path) do
     root =
-      case state.root do
+      case path_root() do
         {app, path} when is_atom(app) and is_binary(path) ->
           Path.join(Application.app_dir(app), path)
 
@@ -73,4 +80,6 @@ defmodule MiniRepo.Store.Local do
 
     Path.join([root | List.wrap(path)])
   end
+
+  defp path_root(), do: Application.get_env(:store, :root)
 end

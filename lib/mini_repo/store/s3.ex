@@ -96,21 +96,21 @@ defmodule MiniRepo.Store.S3 do
   defstruct [:bucket, :options]
 
   @impl true
-  def put(key, value, options, state) do
+  def put(key, value) do
     key = Path.join(List.wrap(key))
-    request = S3.put_object(state.bucket, key, value, options)
+    request = S3.put_object(s3_bucket(), key, value, s3_options())
 
-    with {:ok, _} <- ExAws.request(request, state.options) do
+    with {:ok, _} <- ExAws.request(request) do
       :ok
     end
   end
 
   @impl true
-  def fetch(key, options, state) do
+  def fetch(key) do
     key = Path.join(List.wrap(key))
-    request = S3.get_object(state.bucket, key, options)
+    request = S3.get_object(s3_bucket(), key, s3_options())
 
-    case ExAws.request(request, state.options) do
+    case ExAws.request(request, s3_options()) do
       {:ok, %{body: body}} ->
         {:ok, body}
 
@@ -123,12 +123,34 @@ defmodule MiniRepo.Store.S3 do
   end
 
   @impl true
-  def delete(key, options, state) do
+  def exists?(key) do #TODO controllare output che non si capisce un cazzo
     key = Path.join(List.wrap(key))
-    request = S3.delete_object(state.bucket, key, options)
+    request = S3.head_object(s3_bucket(), key, s3_options())
 
-    with {:ok, _} <- ExAws.request(request, state.options) do
+    case ExAws.request(request) do
+      {:ok, true} ->
+        {:ok, true}
+
+      {:error, {:http_error, 404, _}} ->
+        {:error, :not_found}
+
+      other ->
+        other
+    end
+  end
+
+  @impl true
+  def delete(key) do
+    key = Path.join(List.wrap(key))
+    request = S3.delete_object(s3_bucket(), key, s3_options())
+
+    with {:ok, _} <- ExAws.request(request) do
       :ok
     end
   end
+
+  defp s3_bucket(), do: Application.get_env(:mini_repo, :store)[:bucket]
+
+  defp s3_options(), do: Application.get_env(:mini_repo, :store)[:options]
+
 end

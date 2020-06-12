@@ -1,11 +1,14 @@
 defmodule MiniRepo.Store do
-  @callback put(path :: Path.t(), value :: binary, options :: keyword, state :: any) ::
+  @callback put(path :: Path.t(), value :: binary) ::
               :ok | {:error, term}
 
-  @callback fetch(path :: Path.t(), options :: keyword, state :: any) ::
+  @callback fetch(path :: Path.t()) ::
               {:ok, binary} | {:error, term}
 
-  @callback delete(path :: Path.t(), options :: keyword, state :: any) ::
+  @callback exists?(path :: Path.t()) ::
+              {:ok, binary} | {:error, term}
+
+  @callback delete(path :: Path.t()) ::
               :ok | {:error, term}
 
   def put({mod, state}, path, value, options \\ []) do
@@ -18,6 +21,12 @@ defmodule MiniRepo.Store do
     path = validate_path!(path)
     state = struct!(mod, state)
     mod.fetch(path, options, state)
+  end
+
+  def exists?({mod, state}, path, options \\ []) do
+    path = validate_path!(path)
+    state = struct!(mod, state)
+    mod.exists?(path, options, state)
   end
 
   def delete({mod, state}, path, options \\ []) do

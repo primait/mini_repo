@@ -1,0 +1,21 @@
+version: "3"
+
+services:
+  web:
+    build: .
+    container_name: mini_repo
+    volumes:
+      - "~/.ssh:/home/app/.ssh"
+      - "~/.aws:/home/app/.aws"
+      - "~/.gitconfig:/home/app/.gitconfig"
+      - "~/.gitignore:/home/app/.gitignore"
+      - .:/code
+    ports:
+      - 4000:4000
+    working_dir: /code
+    env_file:
+      - biscuit.env
+    environment:
+      MIX_ENV: dev
+    networks:
+      - default

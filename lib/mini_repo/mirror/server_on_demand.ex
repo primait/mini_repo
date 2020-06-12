@@ -63,6 +63,7 @@ defmodule MiniRepo.Mirror.ServerOnDemand do
   end
 
   defp diff_packages(package_list, mirror, config) do
+    Logger.debug("#{package_list}")
     with {:ok, names} when is_list(names) <- sync_names(mirror, config),
          {:ok, versions} when is_list(versions) <- sync_versions(mirror, config) do
       versions =
@@ -99,7 +100,9 @@ defmodule MiniRepo.Mirror.ServerOnDemand do
   end
 
   def fetch_package_if_not_exist(name) do
+    Logger.debug("#{name}")
     get_pid()
+    |> IO.inspect
     |> GenServer.call({:package_exist, name}, 30_000)
     |> put_package(name)
   end
@@ -111,14 +114,28 @@ defmodule MiniRepo.Mirror.ServerOnDemand do
   end
 
   @impl true
-  def handle_call({:package_exist, name}, _from, mirror) do
-    packages = get_packages_on_disk(mirror)
-    exist = Enum.member?(packages, name)
-
-    {:reply, exist, mirror}
+  def handle_call(query, _from, mirror) do
+    #Logger.debug("handle_call #{query}, #{mirror}")
+    case query do
+      {:package_exist, name} ->
+        # fare qui il fetch da S3 per vedere se c'è il package
+        exist = store_exists?(["packages", "#{name}"])
+        {:reply, exist, mirror}
+      {:tarball_exist, name, version} ->
+        # fare qui il fetch da S3 per vedere se c'è il tarball
+        exist = store_exists?(["tarball", "#{name}-#{version}.tar"])
+        {:reply, exist, mirror}
+      {:put_package, name} ->
+        {:ok, _releases} = sync_package(mirror, get_config_from_mirror(mirror), name) # caricare su S3 il package
+        {:reply, :ok, mirror}
+      {:put_tarball, name, version} ->
+        new_mirror = sync_package_version(mirror, get_config_from_mirror(mirror), name, version) # caricare su S3 il tarball
+        {:reply, :ok, new_mirror}
+    end
   end
 
   def put_package(_exist = false, name) do
+    Logger.debug("#{_exist}, #{name}")
     GenServer.whereis(:hexpm_mirror)
     |> GenServer.call({:put_package, name}, 30_000)
   end
@@ -136,19 +153,8 @@ defmodule MiniRepo.Mirror.ServerOnDemand do
     :ok
   end
 
-  @impl true
-  def handle_call({:put_package, name}, _from, mirror) do
-    {:ok, _releases} = sync_package(mirror, get_config_from_mirror(mirror), name)
-    {:reply, :ok, mirror}
-  end
-
   defp get_pid() do
     GenServer.whereis(:hexpm_mirror)
-  end
-
-  def handle_call({:put_tarball, name, version}, _from, mirror) do
-    new_mirror = sync_package_version(mirror, get_config_from_mirror(mirror), name, version)
-    {:reply, :ok, new_mirror}
   end
 
   defp sync_created_packages(mirror, config, diff) do
@@ -206,7 +212,7 @@ defmodule MiniRepo.Mirror.ServerOnDemand do
   defp sync_deleted_packages(mirror, _config, diff) do
     for name <- diff.packages.deleted do
       for %{version: version} <- mirror.registry[name] do
-        store_delete(mirror, ["tarballs", "#{name}-#{version}.tar"])
+        store_delete(["tarballs", "#{name}-#{version}.tar"])
       end
 
       name
@@ -234,7 +240,7 @@ defmodule MiniRepo.Mirror.ServerOnDemand do
           |> Stream.run()
 
           for version <- map.deleted do
-            store_delete(mirror, ["tarballs", "#{name}-#{version}.tar"])
+            store_delete(["tarballs", "#{name}-#{version}.tar"])
           end
 
           {name, releases}
@@ -340,10 +346,14 @@ defmodule MiniRepo.Mirror.ServerOnDemand do
   end
 
   defp store_put(mirror, path, contents) do
-    MiniRepo.Store.put(mirror.store, ["repos", mirror.name] ++ List.wrap(path), contents)
+    MiniRepo.Store.S3.put(["repos", mirror.name] ++ List.wrap(path), contents)
   end
 
-  defp store_delete(repository, name) do
-    MiniRepo.Store.delete(repository.store, name)
+  defp store_delete(name) do
+    MiniRepo.Store.S3.delete(name)
+  end
+
+  defp store_exists?(name) do # TODO controllare cosa viene passato
+    MiniRepo.Store.S3.exists?(name)
   end
 end
