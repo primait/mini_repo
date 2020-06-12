@@ -9,12 +9,12 @@ defmodule MiniRepo.RegistryBackup do
       registry: repository.registry
     }
 
-    store_put(repository, backup_path(repository), :erlang.term_to_binary(contents))
+    store_put(backup_path(repository), :erlang.term_to_binary(contents))
   end
 
   def load(repository) do
     registry =
-      case store_fetch(repository, backup_path(repository)) do
+      case store_fetch(backup_path(repository)) do
         {:ok, contents} ->
           manifest_vsn = @manifest_vsn
 
@@ -33,12 +33,11 @@ defmodule MiniRepo.RegistryBackup do
     repository.name <> ".bin"
   end
 
-  defp store_put(repository, name, content) do
-    options = []
-    :ok = MiniRepo.Store.put(repository.store, name, content, options)
+  defp store_put(name, content) do
+    :ok = MiniRepo.Store.S3.put(name, content)
   end
 
-  defp store_fetch(repository, name) do
-    MiniRepo.Store.fetch(repository.store, name)
+  defp store_fetch(name) do
+    MiniRepo.Store.S3.fetch(name)
   end
 end

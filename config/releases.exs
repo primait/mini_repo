@@ -6,6 +6,18 @@ config :mini_repo,
 
 repo_name = String.to_atom(System.get_env("MINI_REPO_REPO_NAME", "test_repo"))
 
+config :ex_aws,
+  access_key_id: [{:awscli, "default", 30}, {:system, "AWS_ACCESS_KEY_ID"},],
+  secret_access_key: [{:awscli, "default", 30},{:system, "AWS_SECRET_ACCESS_KEY"}],
+  region: "eu-west-1",
+  json_codec: Jason
+
+store =
+  {MiniRepo.Store.S3,
+    bucket: "prima-mini-repo",
+    options: [region: "eu-west-1"]
+  }
+
 private_key =
   System.get_env("MINI_REPO_PRIVATE_KEY") ||
     File.read!(Path.join([:code.priv_dir(:mini_repo), "test_repo_private.pem"]))
@@ -26,10 +38,14 @@ auth_token =
         "Xyf..."
     """
 
-store = {MiniRepo.Store.Local, root: {:mini_repo, "data"}}
+#store = {MiniRepo.Store.Local, root: "/code/data"}
 
 config :mini_repo,
   auth_token: System.fetch_env!("MINI_REPO_AUTH_TOKEN"),
+  store: [
+    bucket: "prima-mini-repo",
+    options: [region: "eu-west-1"]
+  ],
   repositories: [
     "#{repo_name}": [
       private_key: private_key,
@@ -54,8 +70,7 @@ config :mini_repo,
       -----END PUBLIC KEY-----
       """,
 
-      # only mirror following packages
-      only: ~w(decimal),
+      on_demand: true,
 
       # 5min
       sync_interval: 5 * 60 * 1000

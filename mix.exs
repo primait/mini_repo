@@ -30,6 +30,7 @@ defmodule MiniRepo.MixProject do
       # s3
       {:ex_aws, "~> 2.0"},
       {:ex_aws_s3, "~> 2.0"},
+      {:configparser_ex, "~> 4.0"},
       {:hackney, "~> 1.9"},
       {:jason, "~> 1.0"}
     ]

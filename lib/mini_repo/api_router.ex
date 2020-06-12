@@ -79,19 +79,31 @@ defmodule MiniRepo.APIRouter do
     end
   end
 
+# TODO convertire tutto per puntare ad S3
+# posso usare MiniRepo.Store.fetch(key, options, state) -> {:ok, body}/{:error, :not_found} per controllare se c'è tutto
+
   get "/repos/hexpm_mirror/packages/:name" do
-    if is_configured_on_demand?() do
-      MiniRepo.Mirror.ServerOnDemand.fetch_package_if_not_exist(name)
-    end
+    Logger.debug("#{name}")
+    MiniRepo.Mirror.ServerOnDemand.fetch_package_if_not_exist(name)
 
     with {:ok, data_path} <- get_data_dir(:hexpm_mirror),
-         package_path <-
-           Path.join(
-             Application.app_dir(:mini_repo),
-             "#{data_path}/repos/hexpm_mirror/packages/#{name}"
-           ),
-         true <- File.exists?(package_path) do
-      send_file(conn, 200, package_path)
+        package_path <- "#{data_path}/repos/hexpm_mirror/packages/#{name}",
+        true <- MiniRepo.Store.S3.exists?(package_path),
+        {:ok, body} <- MiniRepo.Store.S3.fetch(package_path) do
+        
+        # contents =
+        # @s3_bucket
+        # |> ExAws.S3.list_objects()
+        # |> ExAws.stream!()
+
+        # S3.list_objects |> ExAws.request! #=> %{body: [list, of, objects]}
+        # S3.list_objects |> ExAws.stream! |> Enum.to_list #=> [list, of, objects]
+
+
+        # HTTPDownloader.stream!( url_to_my_s3_file )
+        # > Enum.each(fn chunk-> send_chunk_to_client(client_conn, chunk) end)
+
+        send_resp(conn, 200, body)
     else
       _ ->
         send_resp(conn, 404, "not found")
@@ -107,18 +119,12 @@ defmodule MiniRepo.APIRouter do
       Enum.at(tb, 1)
       |> String.replace(".tar", "")
 
-    if is_configured_on_demand?() do
-      MiniRepo.Mirror.ServerOnDemand.fetch_tarball_if_not_exist(name, version)
-    end
+    MiniRepo.Mirror.ServerOnDemand.fetch_tarball_if_not_exist(name, version)
 
     with {:ok, data_path} <- get_data_dir(:hexpm_mirror),
-         tarbal_path <-
-           Path.join(
-             Application.app_dir(:mini_repo),
-             "#{data_path}/repos/hexpm_mirror/tarballs/#{tarball}"
-           ),
-         true <- File.exists?(tarbal_path) do
-      send_file(conn, 200, tarbal_path)
+         tarball_path <- "#{data_path}/repos/hexpm_mirror/tarballs/#{tarball}",
+         true <- File.exists?(tarball_path) do
+      send_file(conn, 200, tarball_path)
     else
       _ ->
         send_resp(conn, 404, "not found")
@@ -127,29 +133,20 @@ defmodule MiniRepo.APIRouter do
 
   get "/repos/:repo/packages/:name" do
     with {:ok, data_path} <- get_data_dir(String.to_atom(repo)),
-         package_path <-
-           Path.join(
-             Application.app_dir(:mini_repo),
-             "#{data_path}/repos/#{repo}/packages/#{name}"
-           )
-          do
-      file = File.exists?(package_path)
+         package_path <-"#{data_path}/repos/#{repo}/packages/#{name}",
+         true <- File.exists?(package_path) do
       send_file(conn, 200, package_path)
     else
-      e ->
+      _ ->
         send_resp(conn, 404, "name: #{name}, repo: #{repo} not found")
     end
   end
 
   get "/repos/:repo/tarballs/:tarball" do
     with {:ok, data_path} <- get_data_dir(String.to_atom(repo)),
-         tarbal_path <-
-           Path.join(
-             Application.app_dir(:mini_repo),
-             "#{data_path}/repos/#{repo}/tarballs/#{tarball}"
-           ),
-         true <- File.exists?(tarbal_path) do
-      send_file(conn, 200, tarbal_path)
+         tarball_path <- "#{data_path}/repos/#{repo}/tarballs/#{tarball}",
+         true <- File.exists?(tarball_path) do
+      send_file(conn, 200, tarball_path)
     else
       _ ->
         send_resp(conn, 404, "repo: #{repo}, tarbal: #{tarball} not found")
@@ -158,11 +155,7 @@ defmodule MiniRepo.APIRouter do
 
   get "/repos/:repo/names/" do
     with {:ok, data_path} <- get_data_dir(String.to_atom(repo)),
-         names_path <-
-           Path.join(
-             Application.app_dir(:mini_repo),
-             "#{data_path}/repos/#{repo}/names/"
-           ),
+         names_path <- "#{data_path}/repos/#{repo}/names/",
          true <- File.exists?(names_path) do
       send_file(conn, 200, names_path)
     else
@@ -173,11 +166,7 @@ defmodule MiniRepo.APIRouter do
 
   get "/repos/:repo/versions/" do
     with {:ok, data_path} <- get_data_dir(String.to_atom(repo)),
-         versions_path <-
-           Path.join(
-             Application.app_dir(:mini_repo),
-             "#{data_path}/repos/#{repo}/versions/"
-           ),
+         versions_path <- "#{data_path}/repos/#{repo}/versions/",
          true <- File.exists?(versions_path) do
       send_file(conn, 200, versions_path)
     else
@@ -188,11 +177,7 @@ defmodule MiniRepo.APIRouter do
 
   get "/repos/:repo/docs/:tarball" do
     with {:ok, data_path} <- get_data_dir(String.to_atom(repo)),
-         docs_path <-
-           Path.join(
-             Application.app_dir(:mini_repo),
-             "#{data_path}/repos/#{repo}/docs/#{tarball}"
-           ),
+         docs_path <- "#{data_path}/repos/#{repo}/docs/#{tarball}",
          true <- File.exists?(docs_path) do
       send_file(conn, 200, docs_path)
     else
@@ -227,22 +212,12 @@ defmodule MiniRepo.APIRouter do
         {:error, "Repo not found"}
 
       [{_key, opts}] ->
-        {_, [root: {_, dir}]} = opts[:store]
+        {_, [root: dir]} = opts[:store]
         {:ok, dir}
 
       _ ->
         {:error, "Duplicate repos defined"}
     end
-  end
-
-  defp is_configured_on_demand?() do
-    Application.get_env(:mini_repo, :repositories)
-    |> Enum.filter(fn
-      {:hexpm_mirror, x} -> Keyword.has_key?(x, :on_demand)
-      {_, _} -> false
-    end)
-    |> Enum.empty?()
-    |> Kernel.not()
   end
 
   defp read_tarball(conn, tarball \\ <<>>) do
