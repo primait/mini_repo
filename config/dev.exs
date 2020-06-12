@@ -20,8 +20,9 @@ config :mini_repo,
       upstream_url: "https://repo.hex.pm",
 
       # only mirror following packages
-      only: ~w(decimal),
-
+      on_demand: true,
+      # only: ~w[decimal],
+      
       # 5min
       sync_interval: 5 * 60 * 1000,
       sync_opts: [max_concurrency: 1],

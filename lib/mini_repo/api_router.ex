@@ -1,6 +1,7 @@
 defmodule MiniRepo.APIRouter do
   @moduledoc false
   use Plug.Router
+  require Logger
 
   plug Plug.Parsers,
     parsers: [MiniRepo.HexErlangParser],
@@ -78,6 +79,129 @@ defmodule MiniRepo.APIRouter do
     end
   end
 
+  get "/repos/hexpm_mirror/packages/:name" do
+    if is_configured_on_demand?() do
+      MiniRepo.Mirror.ServerOnDemand.fetch_package_if_not_exist(name)
+    end
+
+    with {:ok, data_path} <- get_data_dir(:hexpm_mirror),
+         package_path <-
+           Path.join(
+             Application.app_dir(:mini_repo),
+             "#{data_path}/repos/hexpm_mirror/packages/#{name}"
+           ),
+         true <- File.exists?(package_path) do
+      send_file(conn, 200, package_path)
+    else
+      _ ->
+        send_resp(conn, 404, "not found")
+    end
+  end
+
+  get "/repos/hexpm_mirror/tarballs/:tarball" do
+    tb =
+      String.split(tarball, "-")
+
+      name = Enum.at(tb, 0)
+      version = 
+      Enum.at(tb, 1)
+      |> String.replace(".tar", "")
+
+    if is_configured_on_demand?() do
+      MiniRepo.Mirror.ServerOnDemand.fetch_tarball_if_not_exist(name, version)
+    end
+
+    with {:ok, data_path} <- get_data_dir(:hexpm_mirror),
+         tarbal_path <-
+           Path.join(
+             Application.app_dir(:mini_repo),
+             "#{data_path}/repos/hexpm_mirror/tarballs/#{tarball}"
+           ),
+         true <- File.exists?(tarbal_path) do
+      send_file(conn, 200, tarbal_path)
+    else
+      _ ->
+        send_resp(conn, 404, "not found")
+    end
+  end
+
+  get "/repos/:repo/packages/:name" do
+    with {:ok, data_path} <- get_data_dir(String.to_atom(repo)),
+         package_path <-
+           Path.join(
+             Application.app_dir(:mini_repo),
+             "#{data_path}/repos/#{repo}/packages/#{name}"
+           )
+          do
+      file = File.exists?(package_path)
+      send_file(conn, 200, package_path)
+    else
+      e ->
+        send_resp(conn, 404, "name: #{name}, repo: #{repo} not found")
+    end
+  end
+
+  get "/repos/:repo/tarballs/:tarball" do
+    with {:ok, data_path} <- get_data_dir(String.to_atom(repo)),
+         tarbal_path <-
+           Path.join(
+             Application.app_dir(:mini_repo),
+             "#{data_path}/repos/#{repo}/tarballs/#{tarball}"
+           ),
+         true <- File.exists?(tarbal_path) do
+      send_file(conn, 200, tarbal_path)
+    else
+      _ ->
+        send_resp(conn, 404, "repo: #{repo}, tarbal: #{tarball} not found")
+    end
+  end
+
+  get "/repos/:repo/names/" do
+    with {:ok, data_path} <- get_data_dir(String.to_atom(repo)),
+         names_path <-
+           Path.join(
+             Application.app_dir(:mini_repo),
+             "#{data_path}/repos/#{repo}/names/"
+           ),
+         true <- File.exists?(names_path) do
+      send_file(conn, 200, names_path)
+    else
+      _ ->
+        send_resp(conn, 404, "not found")
+    end
+  end
+
+  get "/repos/:repo/versions/" do
+    with {:ok, data_path} <- get_data_dir(String.to_atom(repo)),
+         versions_path <-
+           Path.join(
+             Application.app_dir(:mini_repo),
+             "#{data_path}/repos/#{repo}/versions/"
+           ),
+         true <- File.exists?(versions_path) do
+      send_file(conn, 200, versions_path)
+    else
+      _ ->
+        send_resp(conn, 404, "not found")
+    end
+  end
+
+  get "/repos/:repo/docs/:tarball" do
+    with {:ok, data_path} <- get_data_dir(String.to_atom(repo)),
+         docs_path <-
+           Path.join(
+             Application.app_dir(:mini_repo),
+             "#{data_path}/repos/#{repo}/docs/#{tarball}"
+           ),
+         true <- File.exists?(docs_path) do
+      send_file(conn, 200, docs_path)
+    else
+      _ ->
+        send_resp(conn, 404, "not found")
+    end
+  end
+
+
   match _ do
     send_resp(conn, 404, "not found")
   end
@@ -91,6 +215,34 @@ defmodule MiniRepo.APIRouter do
       raise ArgumentError,
             "#{inspect(repo)} is not allowed, allowed repos: #{inspect(allowed_repos)}"
     end
+  end
+
+  def get_data_dir(repo) do
+    repo =
+      Application.get_env(:mini_repo, :repositories)
+      |> Enum.filter(fn {key, _} -> key == repo end)
+
+    case repo do
+      [] ->
+        {:error, "Repo not found"}
+
+      [{_key, opts}] ->
+        {_, [root: {_, dir}]} = opts[:store]
+        {:ok, dir}
+
+      _ ->
+        {:error, "Duplicate repos defined"}
+    end
+  end
+
+  defp is_configured_on_demand?() do
+    Application.get_env(:mini_repo, :repositories)
+    |> Enum.filter(fn
+      {:hexpm_mirror, x} -> Keyword.has_key?(x, :on_demand)
+      {_, _} -> false
+    end)
+    |> Enum.empty?()
+    |> Kernel.not()
   end
 
   defp read_tarball(conn, tarball \\ <<>>) do
